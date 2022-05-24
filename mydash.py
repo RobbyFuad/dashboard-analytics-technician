@@ -1,13 +1,12 @@
+from doctest import DocFileTest
 import streamlit as st
 import pandas as pd
-import altair as alt
 import plotly.express as px
 import numpy as np
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from io import BytesIO
-from pptx.chart.data import CategoryChartData
-from pptx.chart.data import ChartData
+from pptx.chart.data import ChartData, CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_LABEL_POSITION
 from pptx.dml.color import RGBColor
 
@@ -30,6 +29,8 @@ df = pd.read_csv('technicianrate.csv', sep=';')
 df.drop(df.columns[32:],axis=1,inplace=True)
 cols = [8,21,22]
 df.drop(df.columns[cols],axis=1,inplace=True)
+df['tanggal']=pd.to_datetime(df['tanggal'], format="%d/%m/%Y")
+df['tanggal'] = df['tanggal'].dt.date
 
 st.sidebar.header('Input Feature')
 selected_cols = st.sidebar.selectbox('kolom', df.columns)
@@ -48,109 +49,117 @@ st.dataframe(df[df_selected_feature])
 banyak_witel = df['responses.witel_new'].value_counts().rename_axis('witel').reset_index(name='count').sort_values(by=['witel'])
 banyak_sto = df['responses.sto'].value_counts().rename_axis('sto').reset_index(name='count').sort_values(by=['sto'])
 
+# Rating Extraction
+rating = pd.get_dummies(df['responses.rate'], columns=['responses.rate'], prefix='rating', prefix_sep=' ')
+
+# RateXRegion
+RateXRegion_raw = pd.concat([df['responses.region_new'], rating], axis=1)
+RateXRegion = RateXRegion_raw.groupby(['responses.region_new'], as_index=False).sum()
+# RateXWitel
+RateXWitel_raw = pd.concat([df['responses.witel_new'], rating], axis=1)
+RateXWitel = RateXWitel_raw.groupby(['responses.witel_new'], as_index=False).sum()
+RateXWitel.rename(columns = {'responses.witel_new': 'witel'}, inplace = True)
+RateXWitel_fix = RateXWitel.join(banyak_witel.set_index('witel'), on='witel').sort_values(by=['count'], ascending=False)
+# RateXSTO
+RateXSTO_raw = pd.concat([df['responses.sto'], rating], axis=1)
+RateXSTO = RateXSTO_raw.groupby(['responses.sto'], as_index=False).sum()
+RateXSTO.rename(columns = {'responses.sto': 'sto'}, inplace = True)
+RateXSTO = RateXSTO.join(banyak_sto.set_index('sto'), on='sto').sort_values(by=['count'], ascending=False)
+RateXSTO = RateXSTO.astype({
+                    'rating 1':int,
+                    'rating 2':int,
+                    'rating 3':int,
+                    'rating 4':int,
+                    'rating 5':int,
+})
 # Feedback extraction
 feedback = df['responses.selectedOptions'].str.get_dummies(sep=',')
-ordered_feedback = ['Menyelesaikan gangguan dengan cepat',
-                    'Datang tepat waktu',
-                    'Ramah',
-                    'Menjelaskan penyebab gangguan',
-                    'Penampilan/ seragam teknisi rapi',
-                    'Penyelesaikan gangguan lambat',
-                    'Tidak datang tepat waktu',
-                    'Kasar dan tidak sopan',
-                    'Tidak berseragam/ tidak rapi',
-                    'Menjelaskan layanan dengan baik',
-                    'Menyelesaikan pemasangan dengan cepat']
+ordered_feedback = pd.DataFrame(feedback.sum(axis=0).sort_values(ascending=False)).index.tolist() #order column based on their value
 feedback = feedback[ordered_feedback]
-
 
 # FeedbackXRegion
 FeedbackXRegion_raw = pd.concat([df['responses.region_new'], feedback], axis=1)
 FeedbackXRegion = FeedbackXRegion_raw.groupby(['responses.region_new'], as_index=False).sum()
-st.write('Data Dimension: ' + str(FeedbackXRegion.shape[0]) + ' rows and ' + str(FeedbackXRegion.shape[1]) + ' columns.')
-st.dataframe(FeedbackXRegion)
-
-
-# convert long width into long dataframe
-selected_option = list(FeedbackXRegion.columns)[1:]
-regionXfeedback_long = pd.melt(FeedbackXRegion, id_vars = 'responses.region_new', value_vars = selected_option)
-regionXfeedback_long.rename(columns = {'responses.region_new': 'region_fix',
-                                       'variable': 'SelectedOption',
-                                       'value': 'Count'}, inplace = True)
-st.dataframe(regionXfeedback_long)
-
-
-st.header('Banyaknya Witel di Indonesia')
-# Draw banyak_witel chart
-banyak_witel_bar = alt.Chart(banyak_witel).mark_bar(size=10).encode(
-    y = alt.Y('count:Q', title=None),
-    x = alt.X('witel', title=None, sort='-y')
-).properties(
-    width=1200,
-    height=400)
-
-banyak_witel_text = banyak_witel_bar.mark_text(
-    align='center',
-    baseline='middle',
-    #dx=3  # Nudges text to right so it doesn't appear on top of the bar
-).encode(
-    text='count'
-    ).interactive()
-(banyak_witel_bar + banyak_witel_text)
-
-
-st.header('Ringkasan Feedback Teknisi Per Regional')
-#Draw FeedbackXRegion
-FeedbackXRegion_chart = alt.Chart(regionXfeedback_long).mark_bar().encode(
-    x = alt.X('SelectedOption:N', axis=None, sort=alt.EncodingSortField()),
-    y = alt.Y('Count:Q', title=None),
-    color = alt.Color('SelectedOption:N', sort=alt.EncodingSortField()),
-    column = alt.Column('region_fix', title=None)
-).properties(
-    width=120,
-    height=300
-).interactive()
-FeedbackXRegion_chart
-
-
-st.header('Ringkasan Feedback Teknisi Per Witel')
 # FeedbackXWitel
 FeedbackXWitel_raw = pd.concat([df['responses.witel_new'], feedback], axis=1)
 FeedbackXWitel = FeedbackXWitel_raw.groupby(['responses.witel_new'], as_index=False).sum()
 FeedbackXWitel.rename(columns = {'responses.witel_new': 'witel'}, inplace = True)
 FeedbackXWitel_fix = FeedbackXWitel.join(banyak_witel.set_index('witel'), on='witel').sort_values(by=['count'], ascending=False)
-st.write(FeedbackXWitel_fix)
-
-# convert long width into long dataframe
-FeedbackXwitel_long = pd.melt(FeedbackXWitel_fix, id_vars = 'witel',
-                               value_vars = list(FeedbackXWitel_fix.columns)[1:12])
-FeedbackXwitel_long.rename(columns = {'variable': 'SelectedOption',
-                                       'value': 'Count'}, inplace = True)
-st.dataframe(FeedbackXwitel_long)
-
-st.subheader('Top 10 Feedback Teknisi')
-
-#Draw FeedbackXWitel top10
-FeedbackXWitel_chart = alt.Chart(FeedbackXwitel_long.head(10)).mark_bar().encode(
-    x = alt.X('SelectedOption:N', axis=None, sort=alt.EncodingSortField()),
-    y = alt.Y('Count:Q', title=None),
-    color = alt.Color('SelectedOption:N', sort=alt.EncodingSortField()),
-    column = alt.Column('witel', title=None)
-).properties(
-    width=120,
-    height=300
-).interactive()
-FeedbackXWitel_chart
-
-
-st.header('Ringkasan Feedback Teknisi Per STO')
-# FeedbackXWitel
+# FeedbackXSTO
 FeedbackXSTO_raw = pd.concat([df['responses.sto'], feedback], axis=1)
 FeedbackXSTO = FeedbackXSTO_raw.groupby(['responses.sto'], as_index=False).sum()
 FeedbackXSTO.rename(columns = {'responses.sto': 'sto'}, inplace = True)
 FeedbackXSTO = FeedbackXSTO.join(banyak_sto.set_index('sto'), on='sto').sort_values(by=['count'], ascending=False)
-st.write(FeedbackXSTO)
 
+# extract date
+bulan = pd.concat([df['tanggal'], rating], axis=1)
+# rateXbulan = bulan.groupby(['tanggal'], as_index=False).sum()
+# rateXbulan['tanggal'] = rateXbulan['tanggal'].dt.strftime('%m/%Y')
+# rateXbulan_fix = rateXbulan.groupby(['tanggal'], as_index=False).sum()
+
+# function to call graph
+def plotlygraph(str_data, df, str_mode):
+    if str_data=='head':
+        fig = px.bar(df.head(10),
+                     x=df.head(10).columns[0],
+                     y=df.head(10).columns[1:-1],
+                     barmode=str_mode
+                     #title="Wide-Form Input",
+                    )
+    elif str_data=='tail':
+        fig = px.bar(df.tail(10),
+                     x=df.tail(10).columns[0],
+                     y=df.tail(10).columns[1:-1],
+                     barmode=str_mode
+                    )
+    else:
+        fig = px.bar(df,
+                     x=df.columns[0],
+                     y=df.columns[1:],
+                     barmode=str_mode
+                    )
+    st.plotly_chart(fig, use_container_width=True)   
+    return
+
+####################################################################################################################################################
+st.header('Ringkasan Rating Teknisi Per Region')
+plotlygraph(None, RateXRegion, 'group')
+
+st.header('Ringkasan Rating Teknisi Per Witel')
+st.subheader('Top 10 Rating')
+plotlygraph('head', RateXWitel_fix, 'group')
+st.subheader('Bottom 10 Rating')
+plotlygraph('tail', RateXWitel_fix, 'group')
+
+st.header('Ringkasan Rating Teknisi Per STO')
+# st.write(RateXSTO)
+st.subheader('Top 10 Rating')
+plotlygraph('head', RateXSTO, 'group')
+st.subheader('Bottom 10 Rating')
+plotlygraph('tail', RateXSTO, 'group')
+
+####
+st.header('Ringkasan Feedback Teknisi Per Region')
+plotlygraph(None, FeedbackXRegion, 'group')
+
+st.header('Ringkasan Feedback Teknisi Per Witel')
+st.subheader('Top 10 Feedback')
+plotlygraph('head', FeedbackXWitel_fix, 'group')
+st.subheader('Bottom 10 Feedback')
+plotlygraph('tail', FeedbackXWitel_fix, 'group')
+
+st.header('Ringkasan Feedback Teknisi Per STO')
+# st.write(FeedbackXSTO)
+st.subheader('Top 10 Feedback')
+plotlygraph('head', FeedbackXSTO, 'group')
+st.subheader('Bottom 10 Feedback')
+plotlygraph('tail', FeedbackXSTO, 'group')
+
+st.header('Ringkasan Rating Teknisi Per Bulan')
+st.write(feedback)
+
+
+####################################################################################################################################################
 
 # MAKE PPTX FILE
 prs = Presentation('slidemstr.pptx')
@@ -168,7 +177,7 @@ def fbreg(df, str_title):
     # title1.text_frame.paragraphs[0].font.name = "Arial"
     chart_data = ChartData()
     chart_data.categories = list(df.iloc[:,0])
-    for i in range(1,12):
+    for i in range(1,len(df.columns)):
         chart_data.add_series(df.columns[i], (df.iloc[:,i]))
     
     x, y, cx, cy = Inches(1), Inches(1), Inches(12), Inches(6)
@@ -191,7 +200,6 @@ def fbreg(df, str_title):
     chart.legend.font.size = Pt(11)
     chart.legend.font.name = 'Arial'
     return
-fbreg(FeedbackXRegion, 'Ringkasan Feedback Teknisi Per Region')
 
 
 def addSeries(head, df, str_title):
@@ -204,11 +212,11 @@ def addSeries(head, df, str_title):
     chart_data = ChartData()
     if head:
         chart_data.categories = list(df.head(10).iloc[:,0])
-        for i in range (1,12):
+        for i in range (1,len(df.columns)-1):
             chart_data.add_series(df.head(10).columns[i], (df.head(10).iloc[:,i]))
     else:
         chart_data.categories = list(df.tail(10).iloc[:,0])
-        for i in range (1,12):
+        for i in range (1,len(df.columns)-1):
             chart_data.add_series(df.tail(10).columns[i], (df.tail(10).iloc[:,i]))
 
     x, y, cx, cy = Inches(1), Inches(1), Inches(12), Inches(6)
@@ -224,6 +232,13 @@ def addSeries(head, df, str_title):
     chart.legend.font.name = 'Arial'
     return
 
+
+fbreg(RateXRegion, 'Ringkasan Rating Teknisi Per Region')
+addSeries(True, RateXWitel_fix, "Ringkasan Rating Teknisi Per Witel Top 10")
+addSeries(False, RateXWitel_fix, "Ringkasan Rating Teknisi Per Witel Bottom 10")
+addSeries(True, RateXSTO, "Ringkasan Rating Teknisi Per STO Top 10")
+addSeries(False, RateXSTO, "Ringkasan Rating Teknisi Per STO Bottom 10")
+fbreg(FeedbackXRegion, 'Ringkasan Feedback Teknisi Per Region')
 addSeries(True, FeedbackXWitel_fix, "Ringkasan Feedback Teknisi Per Witel Top 10")
 addSeries(False, FeedbackXWitel_fix, "Ringkasan Feedback Teknisi Per Witel Bottom 10")
 addSeries(True, FeedbackXSTO, "Ringkasan Feedback Teknisi Per STO Top 10")
@@ -234,7 +249,7 @@ last_slide = prs.slides.add_slide(prs.slide_layouts[13])
 output = BytesIO()
 prs.save(output)
 st.download_button(
-     label="Download data as PPTX",
+     label="Generate PPTX",
      data=output,
      file_name='technician_rate.pptx',
      mime='text/csv'
