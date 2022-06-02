@@ -6,7 +6,6 @@ import plotly.express as px
 import pandas as pd
 import numpy as np
 import os
-from doctest import DocFileTest
 from pptx.chart.data import ChartData, CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_LABEL_POSITION
 from pptx.dml.color import RGBColor
