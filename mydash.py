@@ -148,6 +148,11 @@ FeedbackXSTO = FeedbackXSTO.join(banyak_sto.set_index('sto'), on='sto').sort_val
 rateXdate = pd.concat([date, rating], axis=1)
 rateXdate.rename(columns = {'responses.createdAt': 'Tanggal'}, inplace = True)
 rateXdate = rateXdate.groupby(['Tanggal'], as_index=False).sum()
+# feedback per rating
+FeedbackXrate_raw = pd.concat([df['responses.rate'], feedback], axis=1)
+FeedbackXrate = FeedbackXrate_raw.groupby(['responses.rate'], as_index=False).sum()
+FeedbackXrate.rename(columns = {'responses.rate': 'rating'}, inplace = True)
+
 
 # function to call graph
 def plotlygraph(df, str_mode, str_data=None):
@@ -177,7 +182,7 @@ def plotlygraph(df, str_mode, str_data=None):
 radio = st.sidebar.radio(label = '',options=('Home', 'Rating', 'Feedback'))
 if radio == 'Home':
     st.sidebar.write('You selected homepage.')
-    st.write(banyak_sto)
+    st.write(FeedbackXrate)
 elif radio == 'Rating':
     st.header('Ringkasan Rating Teknisi Per Region')
     plotlygraph(RateXRegion, 'group')
@@ -248,6 +253,8 @@ def fbreg(df, str_title):
     data_labels.position = XL_LABEL_POSITION.OUTSIDE_END
     
     chart.category_axis.tick_labels.font.size = Pt(11)
+    chart.value_axis.tick_labels.font.size = Pt(11)
+
     chart.has_legend = True
     chart.legend.position = XL_LEGEND_POSITION.RIGHT
     chart.legend.include_in_layout = False
@@ -279,6 +286,8 @@ def addSeries(df, str_title, head=True):
     ).chart
 
     chart.category_axis.tick_labels.font.size = Pt(11)
+    chart.value_axis.tick_labels.font.size = Pt(11)
+    chart.value_axis.minor_unit = 1
     chart.has_legend = True
     chart.legend.position = XL_LEGEND_POSITION.RIGHT
     chart.legend.include_in_layout = False
@@ -314,7 +323,9 @@ def piechart(df):
     return
 
 slide = prs.slides.add_slide(slide_reg)
-
+title = slide.shapes.title
+title.width.top = Inches(3), Inches(3)
+title.text = 'Ringkasan Teknisi'
 
 chart_data = CategoryChartData()
 chart_data.categories = list(banyak_region.iloc[:,0].values)
@@ -322,36 +333,55 @@ chart_data.add_series('Regional', (banyak_region.iloc[:,1].values))
 
 chart_data1 = CategoryChartData()
 chart_data1.categories = list(banyak_sto.sort_values(by=['count'], ascending=False).head(10).iloc[:,0].values)
-chart_data1.add_series('STO', (banyak_sto.sort_values(by=['count'], ascending=False).head(10).iloc[:,1].values))
+chart_data1.add_series('Top 10 STO', (banyak_sto.sort_values(by=['count'], ascending=False).head(10).iloc[:,1].values))
 
-# chart_data2 = CategoryChartData()
-# chart_data2.categories = list(banyak_sto.sort_values(by=['count'], ascending=False).head(10).iloc[:,0].values)
-# chart_data1.add_series('Regional', (banyak_sto.sort_values(by=['count'], ascending=False).head(10).iloc[:,1].values))
+chart_data3 = CategoryChartData()
+chart_data3.categories = list(banyak_witel.sort_values(by=['count'], ascending=False).head(10).iloc[:,0].values)
+chart_data3.add_series('Top 10 Witel', (banyak_witel.sort_values(by=['count'], ascending=False).head(10).iloc[:,1].values))
 
-x, y, cx, cy = Inches(0.5), Inches(1), Inches(6), Inches(4.5)
-slide.shapes.add_chart(
-    XL_CHART_TYPE.COLUMN_CLUSTERED, x, y, cx, cy, chart_data
-).chart.plots[0].vary_by_categories = False
 
-slide.shapes.add_chart(
-    XL_CHART_TYPE.COLUMN_CLUSTERED, x=Inches(7), y=Inches(1), cx=Inches(6), cy=Inches(4.5), chart_data=chart_data1
-).chart.plots[0].vary_by_categories = False
+chart = slide.shapes.add_chart(
+    XL_CHART_TYPE.COLUMN_CLUSTERED, x=Inches(0.5), y=Inches(0.8), cx=Inches(6), cy=Inches(3.5), chart_data=chart_data
+).chart
+plot = chart.plots[0]
+plot.vary_by_categories = False
+chart.category_axis.tick_labels.font.size = Pt(11)
+chart.value_axis.tick_labels.font.size = Pt(11)
+# chart.chart_title.text_frame.paragraphs[0].font.size = Pt(12) 
+# its font size title but seems to overwrite the title defined before, need to define title again
+
+chart1 = slide.shapes.add_chart(
+    XL_CHART_TYPE.COLUMN_CLUSTERED, x=Inches(7), y=Inches(0.8), cx=Inches(6), cy=Inches(3.5), chart_data=chart_data1
+).chart
+plot = chart1.plots[0]
+plot.vary_by_categories = False
+chart1.category_axis.tick_labels.font.size = Pt(11)
+chart1.value_axis.tick_labels.font.size = Pt(11)
+
+chart3 = slide.shapes.add_chart(
+    XL_CHART_TYPE.COLUMN_CLUSTERED, x=Inches(5), y=Inches(4.2), cx=Inches(8), cy=Inches(3.5), chart_data=chart_data3
+).chart
+plot = chart3.plots[0]
+plot.vary_by_categories = False
+chart3.category_axis.tick_labels.font.size = Pt(9)
+chart3.value_axis.tick_labels.font.size = Pt(11)
 
 chart_data2 = ChartData()
 chart_data2.categories = list(df['responses.rate'].value_counts().index)
-chart_data2.add_series('pie', (df['responses.rate'].value_counts().values))
-chart = slide.shapes.add_chart(
-    XL_CHART_TYPE.PIE, x=Inches(0.5), y=Inches(3), cx=Inches(6), cy=Inches(4.5), chart_data=chart_data2
+chart_data2.add_series('Persentase Rating', (df['responses.rate'].value_counts().values))
+chart2 = slide.shapes.add_chart(
+    XL_CHART_TYPE.PIE, x=Inches(0.5), y=Inches(4.2), cx=Inches(4), cy=Inches(3), chart_data=chart_data2
 ).chart
-plot = chart.plots[0]
+plot = chart2.plots[0]
 plot.has_data_labels = True
-data_labels = chart.plots[0].data_labels
-    # data_labels.show_percentage = True
-    # data_labels.number_format = "0\%"
+data_labels = chart2.plots[0].data_labels
 data_labels.position = XL_LABEL_POSITION.OUTSIDE_END
-chart.has_legend = True
-chart.legend.position = XL_LEGEND_POSITION.BOTTOM
-chart.legend.include_in_layout = False
+data_labels.font.size = Pt(9)
+data_labels.show_percentage = True
+data_labels.number_format = '0.00%'
+chart2.has_legend = True
+chart2.legend.position = XL_LEGEND_POSITION.RIGHT
+chart2.legend.include_in_layout = True
 
 
 # piechart(df['responses.rate'])
